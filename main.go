@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"fmt"
+	"math/rand"
 	"os"
 	"pokedexcli/internal/pokeapi"
 	"strings"
@@ -17,11 +18,19 @@ type cliCommand struct {
 type config struct {
 	next     string
 	previous string
+	name     string
 }
 
-const baseURL = "https://pokeapi.co/api/v2/location-area/"
+type Pokemon struct {
+	Name           string
+	BaseExperience int
+}
+
+const locationAreaBaseURL = "https://pokeapi.co/api/v2/location-area/"
+const pokemonBaseURL = "https://pokeapi.co/api/v2/pokemon/"
 
 var commands map[string]cliCommand
+var pokedex map[string]Pokemon
 
 func main() {
 	commands = make(map[string]cliCommand)
@@ -29,6 +38,7 @@ func main() {
 		next:     "",
 		previous: "",
 	}
+	pokedex = make(map[string]Pokemon)
 
 	commands["help"] = cliCommand{
 		name:        "help",
@@ -54,6 +64,18 @@ func main() {
 		callback:    commandMapb,
 	}
 
+	commands["explore"] = cliCommand{
+		name:        "explore",
+		description: "See all Pokemon in a location",
+		callback:    commandExplore,
+	}
+
+	commands["catch"] = cliCommand{
+		name:        "catch",
+		description: "Catch a Pokemon",
+		callback:    commandCatch,
+	}
+
 	scanner := bufio.NewScanner(os.Stdin)
 
 	for {
@@ -70,6 +92,10 @@ func main() {
 			if !ok {
 				fmt.Println("Unknown command")
 				continue
+			}
+
+			if len(inputArray) > 1 && (inputArray[0] == "explore" || inputArray[0] == "catch") {
+				config.name = inputArray[1]
 			}
 
 			err := command.callback(config)
@@ -105,7 +131,7 @@ func commandHelp(cfg *config) error {
 
 func commandMap(cfg *config) error {
 	if len(cfg.next) == 0 {
-		cfg.next = baseURL
+		cfg.next = locationAreaBaseURL
 	}
 
 	locations := pokeapi.GetLocations(cfg.next)
@@ -143,6 +169,62 @@ func commandMapb(cfg *config) error {
 
 	for _, location := range locations.Results {
 		fmt.Println(location.Name)
+	}
+
+	return nil
+}
+
+func commandExplore(cfg *config) error {
+	if len(cfg.name) == 0 {
+		fmt.Println("Please enter a location name")
+		return nil
+	}
+
+	fmt.Printf("Exploring %s...\n", cfg.name)
+
+	locationDetails := pokeapi.GetLocationDetails(locationAreaBaseURL + cfg.name)
+
+	if locationDetails.PokemonEncounters == nil {
+		fmt.Println("No Pokemon found in this location")
+		return nil
+	}
+
+	fmt.Println("Found Pokemon:")
+
+	for _, encounter := range locationDetails.PokemonEncounters {
+		fmt.Println(" - " + encounter.Pokemon.Name)
+	}
+
+	return nil
+}
+
+func commandCatch(cfg *config) error {
+	if len(cfg.name) == 0 {
+		fmt.Println("Please enter a Pokemon name")
+		return nil
+	}
+
+	fmt.Printf("Throwing a Pokeball at %s...\n", cfg.name)
+
+	pokemonDetails := pokeapi.GetPokemonDetails(pokemonBaseURL + cfg.name)
+
+	if pokemonDetails.Name == "" {
+		fmt.Println("Pokemon not found")
+		return nil
+	}
+
+	difficutlyChance := int(float64(pokemonDetails.BaseExperience) * 0.5)
+
+	chance := rand.Intn(pokemonDetails.BaseExperience)
+
+	if chance > difficutlyChance {
+		fmt.Printf("%s was caught!\n", pokemonDetails.Name)
+		pokedex[pokemonDetails.Name] = Pokemon{
+			Name:           pokemonDetails.Name,
+			BaseExperience: pokemonDetails.BaseExperience,
+		}
+	} else {
+		fmt.Printf("%s escaped!\n", pokemonDetails.Name)
 	}
 
 	return nil

@@ -22,8 +22,11 @@ type config struct {
 }
 
 type Pokemon struct {
-	Name           string
-	BaseExperience int
+	name   string
+	height int
+	weight int
+	types  []string
+	stats  map[string]int
 }
 
 const locationAreaBaseURL = "https://pokeapi.co/api/v2/location-area/"
@@ -76,6 +79,18 @@ func main() {
 		callback:    commandCatch,
 	}
 
+	commands["inspect"] = cliCommand{
+		name:        "inspect",
+		description: "Inspect a captured Pokemon",
+		callback:    commandInspect,
+	}
+
+	commands["pokedex"] = cliCommand{
+		name:        "pokedex",
+		description: "Display all caught Pokemon",
+		callback:    commandPokedex,
+	}
+
 	scanner := bufio.NewScanner(os.Stdin)
 
 	for {
@@ -94,7 +109,7 @@ func main() {
 				continue
 			}
 
-			if len(inputArray) > 1 && (inputArray[0] == "explore" || inputArray[0] == "catch") {
+			if len(inputArray) > 1 && (inputArray[0] == "explore" || inputArray[0] == "catch" || inputArray[0] == "inspect") {
 				config.name = inputArray[1]
 			}
 
@@ -219,12 +234,63 @@ func commandCatch(cfg *config) error {
 
 	if chance > difficutlyChance {
 		fmt.Printf("%s was caught!\n", pokemonDetails.Name)
+
+		var types []string
+		for _, t := range pokemonDetails.Types {
+			types = append(types, t.Type.Name)
+		}
+
+		stats := make(map[string]int)
+
+		for _, s := range pokemonDetails.Stats {
+			stats[s.Stat.Name] = s.BaseStat
+		}
+
 		pokedex[pokemonDetails.Name] = Pokemon{
-			Name:           pokemonDetails.Name,
-			BaseExperience: pokemonDetails.BaseExperience,
+			name:   pokemonDetails.Name,
+			height: pokemonDetails.Height,
+			weight: pokemonDetails.Weight,
+			types:  types,
+			stats:  stats,
 		}
 	} else {
 		fmt.Printf("%s escaped!\n", pokemonDetails.Name)
+	}
+
+	return nil
+}
+
+func commandInspect(cfg *config) error {
+	if len(cfg.name) == 0 {
+		fmt.Println("Please enter a Pokemon name")
+		return nil
+	}
+
+	pokemon, ok := pokedex[cfg.name]
+	if !ok {
+		fmt.Println("you have not caught that pokemon")
+		return nil
+	}
+
+	fmt.Printf("Name: %s\n", pokemon.name)
+	fmt.Printf("Height: %d\n", pokemon.height)
+	fmt.Printf("Weight: %d\n", pokemon.weight)
+	fmt.Printf("Stats:\n")
+	for k, v := range pokemon.stats {
+		fmt.Printf(" -%s: %d\n", k, v)
+	}
+	fmt.Printf("Types:\n")
+	for _, t := range pokemon.types {
+		fmt.Printf(" - %s\n", t)
+	}
+
+	return nil
+}
+
+func commandPokedex(cfg *config) error {
+	fmt.Println("Your Pokedex:")
+	for _, pokemon := range pokedex {
+		fmt.Printf(" - %s\n", pokemon.name)
 	}
 
 	return nil

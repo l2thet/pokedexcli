@@ -1,12 +1,15 @@
 package main
 
 import (
-	"bufio"
 	"fmt"
 	"math/rand"
 	"os"
+	"os/signal"
 	"pokedexcli/internal/pokeapi"
 	"strings"
+	"syscall"
+
+	"github.com/eiannone/keyboard"
 )
 
 type cliCommand struct {
@@ -91,32 +94,93 @@ func main() {
 		callback:    commandPokedex,
 	}
 
-	scanner := bufio.NewScanner(os.Stdin)
+	if err := keyboard.Open(); err != nil {
+		fmt.Println(err)
+		os.Exit(1)
+	}
+	defer keyboard.Close()
+
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
+	go func() {
+		<-sigChan
+		keyboard.Close()
+		os.Exit(0)
+	}()
+
+	var input string
+	var enterPressed bool
+	var previousCommands []string
+	var historyIndex int
 
 	for {
+		enterPressed = false
 		fmt.Print("Pokedex > ")
 
-		scanner.Scan()
-		text := scanner.Text()
-
-		inputArray := cleanInput(text)
-		//fmt.Printf("Your command was: %v\n", inputArray[0])
-
-		if len(inputArray) != 0 {
-			command, ok := commands[inputArray[0]]
-			if !ok {
-				fmt.Println("Unknown command")
+		for {
+			char, key, err := keyboard.GetKey()
+			if err != nil {
+				fmt.Println(err)
 				continue
 			}
 
-			if len(inputArray) > 1 && (inputArray[0] == "explore" || inputArray[0] == "catch" || inputArray[0] == "inspect") {
-				config.name = inputArray[1]
+			if key == keyboard.KeyEnter {
+				enterPressed = true
+				fmt.Println() // Move to the next line
+				break
+			} else if key == keyboard.KeyBackspace || key == keyboard.KeyBackspace2 {
+				if len(input) > 0 {
+					input = input[:len(input)-1]
+					fmt.Print("\rPokedex > " + input + " \b")
+				}
+			} else if key == keyboard.KeyArrowUp {
+				if historyIndex > 0 {
+					historyIndex--
+					input = previousCommands[historyIndex]
+					fmt.Print("\rPokedex > " + input + strings.Repeat(" ", 50) + "\rPokedex > " + input)
+				}
+			} else if key == keyboard.KeyArrowDown {
+				if historyIndex < len(previousCommands)-1 {
+					historyIndex++
+					input = previousCommands[historyIndex]
+					fmt.Print("\rPokedex > " + input + strings.Repeat(" ", 50) + "\rPokedex > " + input)
+				} else {
+					historyIndex = len(previousCommands)
+					input = ""
+					fmt.Print("\rPokedex > " + strings.Repeat(" ", 50) + "\rPokedex > ")
+				}
+			} else if key == keyboard.KeySpace {
+				input += " "
+				fmt.Print(" ")
+			} else {
+				input += string(char)
+				fmt.Print(string(char)) // Echo the character
 			}
+		}
 
-			err := command.callback(config)
-			if err != nil {
-				fmt.Printf("Error: %s\n", err)
+		if enterPressed {
+			inputArray := cleanInput(input)
+			if len(inputArray) != 0 {
+				command, ok := commands[inputArray[0]]
+				if !ok {
+					fmt.Println("Unknown command")
+					input = ""
+					continue
+				}
+
+				previousCommands = append(previousCommands, strings.Join(inputArray, " "))
+				historyIndex = len(previousCommands)
+
+				if len(inputArray) > 1 && (inputArray[0] == "explore" || inputArray[0] == "catch" || inputArray[0] == "inspect") {
+					config.name = inputArray[1]
+				}
+
+				err := command.callback(config)
+				if err != nil {
+					fmt.Printf("Error: %s\n", err)
+				}
 			}
+			input = ""
 		}
 	}
 }
@@ -128,6 +192,7 @@ func cleanInput(text string) []string {
 
 func commandExit(cfg *config) error {
 	fmt.Println("Closing the Pokedex... Goodbye!")
+	keyboard.Close()
 	os.Exit(0)
 	return nil
 }
